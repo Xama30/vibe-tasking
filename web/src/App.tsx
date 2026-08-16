@@ -300,6 +300,14 @@ export default function App() {
         )}
 
         <div className="ml-auto flex items-center gap-3 text-xs text-muted">
+          {health && (
+            <span
+              title={health.auth.detail}
+              className={health.auth.source === 'api_key' ? 'text-amber-400' : undefined}
+            >
+              {health.auth.source === 'api_key' ? '⚠ API key billing' : '● Subscription'}
+            </span>
+          )}
           <span title={health?.providers.claude.detail}>
             {health?.providers.claude.ok ? '● Claude ready' : '○ Claude unavailable'}
           </span>

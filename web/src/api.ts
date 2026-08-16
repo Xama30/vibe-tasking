@@ -71,6 +71,7 @@ export interface Message {
 
 export interface Health {
   maxConcurrentRuns: number;
+  auth: { source: 'subscription' | 'api_key'; detail: string };
   providers: { claude: { ok: boolean; detail: string } };
   github: { ok: boolean; detail: string };
 }

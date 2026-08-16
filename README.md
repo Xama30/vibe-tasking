@@ -16,6 +16,23 @@ provider (Codex, etc.) is just another subprocess behind `AgentProvider`.
 If you ever share this with someone else, they'd need their own API key —
 the subscription path only works for the machine you're logged in on.
 
+## Which account pays
+
+Runs use your **Claude Code login**, not an API key — the CLI reports
+`apiKeySource: none` and authenticates from `~/.claude/.credentials.json`.
+
+The runner passes the parent environment straight through to the CLI, so an
+`ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN`) exported for some other project
+would silently move every run onto metered API billing. The header shows which
+one is active — `● Subscription` or a `⚠ API key billing` warning — so unset
+the variable if you see the warning.
+
+**The dollar figures on runs are estimates, not charges.** The CLI reports what
+the tokens would cost at list API rates regardless of how you authenticate. On
+a subscription nothing is billed per run; treat the number as a proxy for how
+much of your rate limit a run consumed. That's also why `VIBE_MAX_CONCURRENT`
+defaults to 2 — rate limits are the real ceiling.
+
 ## Requirements
 
 - Node 24+ (uses `node:sqlite` and native TypeScript execution — no build step)

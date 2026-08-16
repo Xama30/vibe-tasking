@@ -22,10 +22,27 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async () => {
     const claude = await providers.get('claude')!.available();
     const gh = await sh('gh', ['auth', 'status']);
+
+    // The runner passes the parent environment straight through to the CLI, so
+    // an ANTHROPIC_API_KEY exported for some other project would silently move
+    // every run onto metered API billing. Surface it rather than let it hide.
+    const apiKeyVar = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'].find(
+      (name) => (process.env[name] ?? '') !== '',
+    );
+
     return {
       ok: true,
       maxConcurrentRuns: MAX_CONCURRENT_RUNS,
       workspaceDir: WORKSPACE_DIR,
+      auth: apiKeyVar
+        ? {
+            source: 'api_key' as const,
+            detail: `${apiKeyVar} is set — runs are billed to that API account, not your subscription. Unset it to use the subscription.`,
+          }
+        : {
+            source: 'subscription' as const,
+            detail: 'Using your Claude Code login. No API key in the environment.',
+          },
       providers: { claude },
       github: {
         ok: gh.code === 0,
