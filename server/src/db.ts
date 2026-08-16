@@ -74,6 +74,22 @@ CREATE INDEX IF NOT EXISTS idx_messages_task ON messages(task_id, id);
 `);
 
 /**
+ * Additive column migrations.
+ *
+ * The CREATE TABLE statements above are `IF NOT EXISTS`, so they never alter an
+ * existing database. Anything added after the first release has to land here.
+ */
+function addColumn(table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+addColumn('runs', 'effort', 'TEXT');
+addColumn('projects', 'default_model', 'TEXT');
+addColumn('projects', 'default_effort', 'TEXT');
+
+/**
  * A run marked `running` in the DB while no process exists is a crashed run —
  * the server died mid-flight. Reconcile on boot so the board never shows a
  * ghost agent that will never finish.

@@ -131,7 +131,7 @@ export class ClaudeProvider implements AgentProvider {
   }
 
   async run(options: AgentRunOptions): Promise<AgentRunResult> {
-    const { prompt, cwd, model, resumeSessionId, signal, onEvent } = options;
+    const { prompt, cwd, model, effort, resumeSessionId, signal, onEvent } = options;
 
     const args = [
       '-p',
@@ -149,6 +149,7 @@ export class ClaudeProvider implements AgentProvider {
     ];
 
     if (model) args.push('--model', model);
+    if (effort) args.push('--effort', effort);
     // Resuming is what makes task iteration cheap: the agent keeps everything
     // it already learned about this task instead of re-reading the repo.
     if (resumeSessionId) args.push('--resume', resumeSessionId);
@@ -162,6 +163,7 @@ export class ClaudeProvider implements AgentProvider {
     });
 
     let sessionId: string | null = resumeSessionId ?? null;
+    let resolvedModel: string | null = null;
     let finalText = '';
     let costUsd: number | null = null;
     let failed: string | undefined;
@@ -184,6 +186,9 @@ export class ClaudeProvider implements AgentProvider {
       }
 
       if (parsed.session_id) sessionId = parsed.session_id;
+      if (parsed.type === 'system' && parsed.subtype === 'init' && parsed.model) {
+        resolvedModel = parsed.model;
+      }
       if (parsed.type === 'result') {
         finalText = parsed.result ?? '';
         costUsd = parsed.total_cost_usd ?? null;
@@ -215,12 +220,12 @@ export class ClaudeProvider implements AgentProvider {
     if (buffer.trim()) handleLine(buffer);
 
     if (signal.aborted) {
-      return { ok: false, sessionId, text: finalText, costUsd, error: 'Cancelled' };
+      return { ok: false, sessionId, resolvedModel, text: finalText, costUsd, error: 'Cancelled' };
     }
     if (exitCode !== 0 && !failed) {
       failed = `claude exited with code ${exitCode}`;
     }
 
-    return { ok: !failed, sessionId, text: finalText, costUsd, error: failed };
+    return { ok: !failed, sessionId, resolvedModel, text: finalText, costUsd, error: failed };
   }
 }

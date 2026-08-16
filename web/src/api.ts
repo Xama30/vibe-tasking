@@ -4,6 +4,8 @@ export interface Project {
   repo_path: string;
   github_repo: string | null;
   default_branch: string;
+  default_model: string | null;
+  default_effort: string | null;
 }
 
 export type TaskStatus = 'backlog' | 'ready' | 'running' | 'review' | 'done';
@@ -21,11 +23,18 @@ export interface Task {
   run_count?: number;
 }
 
+export interface Choice {
+  id: string;
+  label: string;
+  hint: string;
+}
+
 export interface Run {
   id: number;
   task_id: number;
   provider: string;
   model: string | null;
+  effort: string | null;
   agent_session_id: string | null;
   branch: string;
   status: string;
@@ -106,16 +115,24 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  runTask: (taskId: number, model?: string) =>
-    request<{ runId: number }>(`/api/tasks/${taskId}/run`, {
-      method: 'POST',
-      body: JSON.stringify({ model }),
+  choices: () => request<{ models: Choice[]; efforts: Choice[] }>('/api/models'),
+
+  setProjectDefaults: (projectId: number, defaultModel: string, defaultEffort: string) =>
+    request<{ project: Project }>(`/api/projects/${projectId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ defaultModel, defaultEffort }),
     }),
 
-  comment: (taskId: number, content: string, run: boolean) =>
+  runTask: (taskId: number, model?: string, effort?: string) =>
+    request<{ runId: number }>(`/api/tasks/${taskId}/run`, {
+      method: 'POST',
+      body: JSON.stringify({ model, effort }),
+    }),
+
+  comment: (taskId: number, content: string, run: boolean, model?: string, effort?: string) =>
     request<{ queued: boolean; runId?: number }>(`/api/tasks/${taskId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, run }),
+      body: JSON.stringify({ content, run, model, effort }),
     }),
 
   runEvents: (runId: number) => request<{ events: RunEvent[] }>(`/api/runs/${runId}/events`),

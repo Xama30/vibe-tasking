@@ -49,6 +49,29 @@ Edit `server/src/scaffold.ts` to change what lands in a new repo. It's the only
 place scaffolding lives, so per-language templates are a matter of returning a
 different array.
 
+## Choosing a model
+
+Each run picks a model and an effort level, falling back to the project default
+and then to your Claude Code settings. Aliases are used rather than pinned ids
+so a new model generation is picked up without a code change:
+
+| Alias | Resolves to | Good for |
+| --- | --- | --- |
+| `opus` | `claude-opus-5` | Hard, multi-file work |
+| `sonnet` | `claude-sonnet-5` | Near-Opus coding, cheaper |
+| `haiku` | `claude-haiku-4-5` | Small, well-specified edits |
+
+Effort (`low` → `max`) is often the bigger lever: it controls how much the agent
+explores and verifies before answering. `xhigh` suits agentic coding; the lower
+levels are stronger than their names suggest.
+
+The spread is real — the same board produced a $0.48 Opus run and a $0.04
+Haiku/low run. Run history records the **resolved** model id rather than the
+alias, because `opus` today and `opus` in six months are different models.
+
+Edit `server/src/models.ts` to change the offered choices. `fable` is omitted
+because it only resolves on plans that include it.
+
 ## How it works
 
 ```

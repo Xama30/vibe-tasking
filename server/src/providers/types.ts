@@ -28,6 +28,8 @@ export interface AgentRunOptions {
   /** The worktree. The agent is confined here. */
   cwd: string;
   model?: string | null;
+  /** How hard the agent should work: low | medium | high | xhigh | max. */
+  effort?: string | null;
   /** Provider-native session id, to continue a previous run on this task. */
   resumeSessionId?: string | null;
   signal: AbortSignal;
@@ -38,6 +40,12 @@ export interface AgentRunResult {
   ok: boolean;
   /** Persist this — it's what makes "iterate on the task" possible later. */
   sessionId: string | null;
+  /**
+   * What the provider actually ran, as reported by the agent itself. An alias
+   * like `opus` says nothing about which Opus you got, so run history records
+   * the resolved id rather than the request.
+   */
+  resolvedModel: string | null;
   text: string;
   costUsd: number | null;
   error?: string;

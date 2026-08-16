@@ -6,6 +6,12 @@ import { MAX_CONCURRENT_RUNS, WORKSPACE_DIR } from './config.ts';
 import { db, now } from './db.ts';
 import { createGitHubRepo, currentBranch, hasRemote, isGitRepo, sh, slugify } from './git.ts';
 import { cancelRun, enqueueRun, providers } from './runner.ts';
+import {
+  EFFORT_CHOICES,
+  MODEL_CHOICES,
+  normalizeEffort,
+  normalizeModel,
+} from './models.ts';
 import { defaultScaffold, writeScaffold } from './scaffold.ts';
 
 const BOARD_COLUMNS = ['backlog', 'ready', 'running', 'review', 'done'] as const;
@@ -27,9 +33,31 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /** Model and effort options for the pickers. */
+  app.get('/api/models', async () => ({
+    models: MODEL_CHOICES,
+    efforts: EFFORT_CHOICES,
+  }));
+
   app.get('/api/projects', async () => ({
     projects: db.prepare('SELECT * FROM projects ORDER BY id').all(),
   }));
+
+  /** Set a project's default model/effort, used when a run doesn't specify. */
+  app.patch('/api/projects/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { defaultModel?: string; defaultEffort?: string };
+
+    db.prepare('UPDATE projects SET default_model = ?, default_effort = ? WHERE id = ?').run(
+      normalizeModel(body.defaultModel),
+      normalizeEffort(body.defaultEffort),
+      Number(id),
+    );
+
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(Number(id));
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+    return { project };
+  });
 
   app.post('/api/projects', async (request, reply) => {
     const body = request.body as {
@@ -180,9 +208,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   /** Start (or restart) an agent on this task. */
   app.post('/api/tasks/:id/run', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = (request.body ?? {}) as { model?: string; provider?: string };
+    const body = (request.body ?? {}) as { model?: string; effort?: string; provider?: string };
     try {
-      return enqueueRun({ taskId: Number(id), model: body.model, provider: body.provider });
+      return enqueueRun({
+        taskId: Number(id),
+        model: normalizeModel(body.model),
+        effort: normalizeEffort(body.effort),
+        provider: body.provider,
+      });
     } catch (error) {
       return reply.code(400).send({ error: (error as Error).message });
     }
@@ -194,7 +227,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post('/api/tasks/:id/messages', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = request.body as { content?: string; run?: boolean; model?: string };
+    const body = request.body as {
+      content?: string;
+      run?: boolean;
+      model?: string;
+      effort?: string;
+    };
     if (!body.content?.trim()) return reply.code(400).send({ error: 'content is required' });
 
     db.prepare(
@@ -205,7 +243,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (body.run === false) return { queued: false };
 
     try {
-      return { queued: true, ...enqueueRun({ taskId: Number(id), model: body.model }) };
+      return {
+        queued: true,
+        ...enqueueRun({
+          taskId: Number(id),
+          model: normalizeModel(body.model),
+          effort: normalizeEffort(body.effort),
+        }),
+      };
     } catch (error) {
       return reply.code(400).send({ error: (error as Error).message });
     }

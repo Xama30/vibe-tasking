@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type Message, type Run, type RunEvent, type Task } from './api';
+import { api, type Choice, type Message, type Run, type RunEvent, type Task } from './api';
 
 const KIND_STYLE: Record<string, string> = {
   init: 'text-muted',
@@ -55,6 +55,37 @@ function RunLog({ runId, live }: { runId: number; live: boolean }) {
   );
 }
 
+function ChoiceSelect({
+  label,
+  value,
+  choices,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  choices: Choice[];
+  onChange: (value: string) => void;
+}) {
+  const hint = choices.find((choice) => choice.id === value)?.hint;
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[11px] tracking-wide text-muted uppercase">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        title={hint}
+        className="rounded-lg border border-edge bg-surface px-2 py-1.5 text-sm outline-none focus:border-accent"
+      >
+        {choices.map((choice) => (
+          <option key={choice.id} value={choice.id}>
+            {choice.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function TaskPanel({
   taskId,
   onClose,
@@ -70,6 +101,17 @@ export function TaskPanel({
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [models, setModels] = useState<Choice[]>([]);
+  const [efforts, setEfforts] = useState<Choice[]>([]);
+  const [model, setModel] = useState('');
+  const [effort, setEffort] = useState('');
+
+  useEffect(() => {
+    void api.choices().then((data) => {
+      setModels(data.models);
+      setEfforts(data.efforts);
+    });
+  }, []);
 
   const load = useCallback(async () => {
     const data = await api.task(taskId);
@@ -136,11 +178,16 @@ export function TaskPanel({
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-3">
+          <ChoiceSelect label="Model" value={model} choices={models} onChange={setModel} />
+          <ChoiceSelect label="Effort" value={effort} choices={efforts} onChange={setEffort} />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={busy || isRunning}
-            onClick={() => void act(() => api.runTask(task.id))}
+            onClick={() => void act(() => api.runTask(task.id, model, effort))}
             className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-surface disabled:opacity-40"
           >
             {runs.length === 0 ? 'Implement' : 'Run again'}
@@ -182,6 +229,8 @@ export function TaskPanel({
                 {run.status}
               </span>
               <code className="rounded bg-surface px-1.5 py-0.5">{run.branch}</code>
+              {run.model && <span title="Model that actually ran">{run.model}</span>}
+              {run.effort && <span>effort: {run.effort}</span>}
               {run.cost_usd != null && <span>${run.cost_usd.toFixed(3)}</span>}
               {run.pr_url && (
                 <a
@@ -248,7 +297,7 @@ export function TaskPanel({
             disabled={busy || isRunning || !comment.trim()}
             onClick={() =>
               void act(async () => {
-                await api.comment(task.id, comment, true);
+                await api.comment(task.id, comment, true, model, effort);
                 setComment('');
               })
             }

@@ -23,6 +23,8 @@ interface ProjectRow {
   repo_path: string;
   github_repo: string | null;
   default_branch: string;
+  default_model: string | null;
+  default_effort: string | null;
 }
 
 interface TaskRow {
@@ -39,6 +41,7 @@ interface RunRow {
   task_id: number;
   provider: string;
   model: string | null;
+  effort: string | null;
   agent_session_id: string | null;
   branch: string;
   worktree_path: string;
@@ -133,6 +136,7 @@ function buildPrompt(task: TaskRow, isIteration: boolean): string {
 export function enqueueRun(opts: {
   taskId: number;
   model?: string | null;
+  effort?: string | null;
   provider?: string;
 }): { runId: number } {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(opts.taskId) as
@@ -155,15 +159,21 @@ export function enqueueRun(opts: {
   const worktreeRoot = path.join(path.dirname(project.repo_path), '.vibe-worktrees', project.name);
   const worktreePath = path.join(worktreeRoot, branch.replace(/\//g, '__'));
 
+  // Explicit choice for this run wins, then the project default, then the
+  // CLI's own default (null — we simply omit the flag).
+  const model = opts.model ?? project.default_model ?? null;
+  const effort = opts.effort ?? project.default_effort ?? null;
+
   const info = db
     .prepare(
-      `INSERT INTO runs (task_id, provider, model, agent_session_id, branch, worktree_path, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'queued')`,
+      `INSERT INTO runs (task_id, provider, model, effort, agent_session_id, branch, worktree_path, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'queued')`,
     )
     .run(
       task.id,
       opts.provider ?? 'claude',
-      opts.model ?? null,
+      model,
+      effort,
       previous?.agent_session_id ?? null,
       branch,
       worktreePath,
@@ -216,6 +226,7 @@ async function execute(runId: number): Promise<void> {
       prompt: buildPrompt(task, isIteration),
       cwd: run.worktree_path,
       model: run.model,
+      effort: run.effort,
       resumeSessionId: run.agent_session_id,
       signal: controller.signal,
       onEvent: (event) => recordEvent(runId, event.kind, event.summary, event.data),
@@ -223,6 +234,11 @@ async function execute(runId: number): Promise<void> {
 
     if (result.sessionId) {
       setRunStatus(runId, { agent_session_id: result.sessionId });
+    }
+    // Record what actually ran, not what was asked for — `opus` today and
+    // `opus` in six months are different models.
+    if (result.resolvedModel) {
+      setRunStatus(runId, { model: result.resolvedModel });
     }
     if (result.costUsd != null) {
       setRunStatus(runId, { cost_usd: result.costUsd });
