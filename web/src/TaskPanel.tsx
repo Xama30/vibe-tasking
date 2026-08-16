@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type Choice, type Message, type Run, type RunEvent, type Task } from './api';
+import {
+  api,
+  type Blocker,
+  type Choice,
+  type Message,
+  type Run,
+  type RunEvent,
+  type Task,
+} from './api';
 
 const KIND_STYLE: Record<string, string> = {
   init: 'text-muted',
@@ -96,6 +104,7 @@ export function TaskPanel({
   onChanged: () => void;
 }) {
   const [task, setTask] = useState<Task | null>(null);
+  const [blockers, setBlockers] = useState<Blocker[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [comment, setComment] = useState('');
@@ -116,6 +125,7 @@ export function TaskPanel({
   const load = useCallback(async () => {
     const data = await api.task(taskId);
     setTask(data.task);
+    setBlockers(data.blockers);
     setRuns(data.runs);
     setMessages(data.messages);
   }, [taskId]);
@@ -183,15 +193,46 @@ export function TaskPanel({
           <ChoiceSelect label="Effort" value={effort} choices={efforts} onChange={setEffort} />
         </div>
 
+        {blockers.length > 0 && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm">
+            <div className="mb-1 text-xs font-medium text-amber-400">
+              Waiting on earlier work in stream {task.stream}
+            </div>
+            <ul className="space-y-0.5 text-xs text-muted">
+              {blockers.map((blocker) => (
+                <li key={blocker.id}>
+                  #{blocker.id} {blocker.title}{' '}
+                  <span className="text-muted/60">({blocker.status})</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[11px] text-muted">
+              This task branches from the default branch, so it can&apos;t see that work until
+              it merges.
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            disabled={busy || isRunning}
+            disabled={busy || isRunning || blockers.length > 0}
             onClick={() => void act(() => api.runTask(task.id, model, effort))}
             className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-surface disabled:opacity-40"
           >
             {runs.length === 0 ? 'Implement' : 'Run again'}
           </button>
+          {blockers.length > 0 && !isRunning && (
+            <button
+              type="button"
+              disabled={busy}
+              title="Run despite the unfinished work above"
+              onClick={() => void act(() => api.runTask(task.id, model, effort, true))}
+              className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm text-amber-300 hover:bg-amber-500/10"
+            >
+              Run anyway
+            </button>
+          )}
           {isRunning && latestRun && (
             <button
               type="button"

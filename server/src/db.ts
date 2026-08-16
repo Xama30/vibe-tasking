@@ -90,6 +90,14 @@ addColumn('projects', 'default_model', 'TEXT');
 addColumn('projects', 'default_effort', 'TEXT');
 addColumn('projects', 'chat_session_id', 'TEXT');
 
+/**
+ * Streams express ordering. Tasks in the same stream run one after another;
+ * different streams run in parallel. A task is blocked while any earlier task
+ * in its own stream is unfinished — see `isTaskBlocked`.
+ */
+addColumn('tasks', 'stream', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('tasks', 'stream_order', 'INTEGER NOT NULL DEFAULT 0');
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS chat_messages (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123,3 +131,30 @@ export function reconcileOrphanedRuns(): number {
 }
 
 export const now = () => new Date().toISOString();
+
+export interface Blocker {
+  id: number;
+  title: string;
+  status: string;
+}
+
+/**
+ * Tasks earlier in the same stream that aren't done yet.
+ *
+ * Ordering is per-stream, not global: a task is never blocked by work in
+ * another stream, which is the whole point of assigning streams.
+ */
+export function streamBlockers(taskId: number): Blocker[] {
+  const task = db
+    .prepare('SELECT project_id, stream, stream_order FROM tasks WHERE id = ?')
+    .get(taskId) as { project_id: number; stream: number; stream_order: number } | undefined;
+  if (!task) return [];
+
+  return db
+    .prepare(
+      `SELECT id, title, status FROM tasks
+       WHERE project_id = ? AND stream = ? AND stream_order < ? AND status != 'done'
+       ORDER BY stream_order`,
+    )
+    .all(task.project_id, task.stream, task.stream_order) as Blocker[];
+}

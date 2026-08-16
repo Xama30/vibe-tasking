@@ -10,6 +10,12 @@ export interface Project {
 
 export type TaskStatus = 'backlog' | 'ready' | 'running' | 'review' | 'done';
 
+export interface Blocker {
+  id: number;
+  title: string;
+  status: string;
+}
+
 export interface Task {
   id: number;
   project_id: number;
@@ -17,6 +23,10 @@ export interface Task {
   title: string;
   body: string;
   status: TaskStatus;
+  stream: number;
+  stream_order: number;
+  blocked?: boolean;
+  blockers?: Blocker[];
   last_run_status?: string | null;
   last_run_id?: number | null;
   pr_url?: string | null;
@@ -116,7 +126,15 @@ export const api = {
     }),
 
   task: (taskId: number) =>
-    request<{ task: Task; runs: Run[]; messages: Message[] }>(`/api/tasks/${taskId}`),
+    request<{ task: Task; blockers: Blocker[]; runs: Run[]; messages: Message[] }>(
+      `/api/tasks/${taskId}`,
+    ),
+
+  runUnblocked: (projectId: number) =>
+    request<{ started: number[]; skipped: Array<{ id: number; reason: string }> }>(
+      `/api/projects/${projectId}/run-unblocked`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
 
   updateTask: (taskId: number, patch: { status?: TaskStatus; title?: string }) =>
     request<{ task: Task }>(`/api/tasks/${taskId}`, {
@@ -144,10 +162,10 @@ export const api = {
       body: JSON.stringify({ defaultModel, defaultEffort }),
     }),
 
-  runTask: (taskId: number, model?: string, effort?: string) =>
+  runTask: (taskId: number, model?: string, effort?: string, force?: boolean) =>
     request<{ runId: number }>(`/api/tasks/${taskId}/run`, {
       method: 'POST',
-      body: JSON.stringify({ model, effort }),
+      body: JSON.stringify({ model, effort, force }),
     }),
 
   comment: (taskId: number, content: string, run: boolean, model?: string, effort?: string) =>

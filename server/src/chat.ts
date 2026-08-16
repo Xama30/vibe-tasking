@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bus } from './bus.ts';
@@ -6,6 +7,17 @@ import { db, now } from './db.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MCP_SERVER = path.join(HERE, 'mcp', 'board.ts');
+
+/**
+ * How to split work into parallel streams.
+ *
+ * This lives in a markdown file you can edit like a skill, but it is appended
+ * to the system prompt on every turn rather than registered as a Claude Code
+ * skill. Skills load on demand when their description matches the request;
+ * decomposition is this agent's entire job, so it must never be the turn where
+ * the guidance failed to trigger.
+ */
+const PLANNING_GUIDANCE = fs.readFileSync(path.join(HERE, 'prompts', 'planning.md'), 'utf8');
 
 /**
  * The planning chat is deliberately read-only over the codebase: it can look
@@ -36,6 +48,8 @@ const SYSTEM_PROMPT = [
   '- Do not invent scope. If the request is ambiguous enough that it changes what the',
   '  tasks should be, ask one clarifying question instead of guessing.',
   '- Keep replies short. The board is the deliverable, not your prose.',
+  '',
+  PLANNING_GUIDANCE,
 ].join('\n');
 
 interface ProjectRow {

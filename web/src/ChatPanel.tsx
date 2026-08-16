@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type ChatMessage } from './api';
+import { api, type ChatMessage, type Choice } from './api';
 
 const SUGGESTIONS = [
   'What should I work on next?',
@@ -20,7 +20,15 @@ export function ChatPanel({
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [models, setModels] = useState<Choice[]>([]);
+  // Planning is frequent and cheap next to implementation, so it defaults to
+  // Sonnet rather than inheriting the project's implementation model.
+  const [model, setModel] = useState('sonnet');
   const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void api.choices().then((data) => setModels(data.models.filter((choice) => choice.id)));
+  }, []);
 
   const load = useCallback(async () => {
     const data = await api.chatHistory(projectId);
@@ -54,7 +62,7 @@ export function ChatPanel({
     ]);
 
     try {
-      const result = await api.sendChat(projectId, content);
+      const result = await api.sendChat(projectId, content, model);
       await load();
       if (result.createdTasks) onBoardChanged();
     } catch (err) {
@@ -69,7 +77,18 @@ export function ChatPanel({
     <aside className="flex h-full w-[420px] max-w-[40vw] min-w-[320px] shrink-0 flex-col border-r border-edge bg-panel">
       <header className="flex items-center gap-2 border-b border-edge px-4 py-3">
         <h2 className="text-sm font-semibold">Plan</h2>
-        <span className="text-xs text-muted">files tasks for you</span>
+        <select
+          value={model}
+          onChange={(event) => setModel(event.target.value)}
+          title={models.find((choice) => choice.id === model)?.hint}
+          className="rounded border border-edge bg-surface px-1.5 py-0.5 text-xs text-muted"
+        >
+          {models.map((choice) => (
+            <option key={choice.id} value={choice.id}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           onClick={() => {

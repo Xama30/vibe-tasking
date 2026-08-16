@@ -11,14 +11,38 @@ const COLUMNS: { id: TaskStatus; label: string }[] = [
   { id: 'done', label: 'Done' },
 ];
 
+/** Distinct hues per stream so parallel lanes are scannable at a glance. */
+const STREAM_COLORS = [
+  'border-sky-500/40 text-sky-300',
+  'border-emerald-500/40 text-emerald-300',
+  'border-violet-500/40 text-violet-300',
+  'border-amber-500/40 text-amber-300',
+  'border-pink-500/40 text-pink-300',
+];
+
+function StreamBadge({ stream }: { stream: number }) {
+  const tone = STREAM_COLORS[(stream - 1) % STREAM_COLORS.length];
+  return (
+    <span
+      className={`rounded border px-1 py-px text-[10px] ${tone}`}
+      title={`Stream ${stream} — runs in order; other streams run in parallel`}
+    >
+      S{stream}
+    </span>
+  );
+}
+
 function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="w-full rounded-lg border border-edge bg-panel p-3 text-left transition hover:border-accent/60"
+      className={`w-full rounded-lg border bg-panel p-3 text-left transition hover:border-accent/60 ${
+        task.blocked ? 'border-edge opacity-60' : 'border-edge'
+      }`}
     >
       <div className="mb-1.5 flex items-center gap-2 text-[11px] text-muted">
+        <StreamBadge stream={task.stream} />
         <span className={task.type === 'bug' ? 'text-rose-400' : 'text-muted'}>
           {task.type === 'bug' ? '🐞 bug' : 'task'}
         </span>
@@ -34,6 +58,11 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
         )}
       </div>
       <div className="text-sm leading-snug">{task.title}</div>
+      {task.blocked && task.blockers?.length ? (
+        <div className="mt-1.5 text-[11px] text-amber-400/80">
+          waiting on #{task.blockers.map((b) => b.id).join(', #')}
+        </div>
+      ) : null}
       {(task.run_count ?? 0) > 0 && (
         <div className="mt-1.5 text-[11px] text-muted">
           {task.run_count} run{task.run_count === 1 ? '' : 's'}
@@ -228,6 +257,9 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
 
   const currentProject = projects.find((project) => project.id === projectId);
+  const runnableCount = tasks.filter(
+    (task) => !task.blocked && (task.status === 'backlog' || task.status === 'ready'),
+  ).length;
 
   const refreshBoard = useCallback(async () => {
     if (projectId == null) return;
@@ -286,6 +318,24 @@ export default function App() {
           }`}
         >
           Plan
+        </button>
+
+        <button
+          type="button"
+          disabled={projectId == null || runnableCount === 0}
+          title="Start the first unfinished task in every stream, in parallel"
+          onClick={() => {
+            if (projectId == null) return;
+            void api.runUnblocked(projectId).then((result) => {
+              void refreshBoard();
+              if (result.started.length === 0) {
+                window.alert('Nothing runnable — every pending task is waiting on earlier work.');
+              }
+            });
+          }}
+          className="rounded border border-edge px-2 py-1 text-sm text-muted hover:text-ink disabled:opacity-40"
+        >
+          Run {runnableCount > 0 ? runnableCount : ''} unblocked
         </button>
 
         {currentProject?.github_repo && (

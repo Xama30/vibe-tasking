@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { bus } from './bus.ts';
 import { chatHistory, resetChat, sendChatMessage } from './chat.ts';
 import { MAX_CONCURRENT_RUNS, WORKSPACE_DIR } from './config.ts';
-import { db, now } from './db.ts';
+import { db, now, streamBlockers } from './db.ts';
 import { createGitHubRepo, currentBranch, hasRemote, isGitRepo, sh, slugify } from './git.ts';
 import { cancelRun, enqueueRun, providers } from './runner.ts';
 import {
@@ -175,11 +175,59 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
                 (SELECT id      FROM runs WHERE task_id = t.id ORDER BY id DESC LIMIT 1) AS last_run_id,
                 (SELECT COUNT(*) FROM runs WHERE task_id = t.id) AS run_count
          FROM tasks t WHERE t.project_id = ?
-         ORDER BY t.position, t.id`,
+         ORDER BY t.stream, t.stream_order, t.id`,
       )
-      .all(Number(id));
+      .all(Number(id)) as Array<Record<string, unknown> & { id: number }>;
 
-    return { project, columns: BOARD_COLUMNS, tasks };
+    // Annotate each task with what, if anything, it's waiting on.
+    const withBlockers = tasks.map((task) => {
+      const blockers = streamBlockers(task.id);
+      return { ...task, blockers, blocked: blockers.length > 0 };
+    });
+
+    return { project, columns: BOARD_COLUMNS, tasks: withBlockers };
+  });
+
+  /**
+   * Start the head of every stream at once — the payoff for assigning streams.
+   * Concurrency is still capped by the run queue.
+   */
+  app.post('/api/projects/:id/run-unblocked', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as { model?: string; effort?: string };
+
+    const candidates = db
+      .prepare(
+        `SELECT id FROM tasks
+         WHERE project_id = ? AND status IN ('backlog','ready')
+         ORDER BY stream, stream_order, id`,
+      )
+      .all(Number(id)) as Array<{ id: number }>;
+
+    const started: number[] = [];
+    const skipped: Array<{ id: number; reason: string }> = [];
+
+    for (const candidate of candidates) {
+      if (streamBlockers(candidate.id).length > 0) {
+        skipped.push({ id: candidate.id, reason: 'blocked by earlier work in its stream' });
+        continue;
+      }
+      try {
+        enqueueRun({
+          taskId: candidate.id,
+          model: normalizeModel(body.model),
+          effort: normalizeEffort(body.effort),
+        });
+        started.push(candidate.id);
+      } catch (error) {
+        skipped.push({ id: candidate.id, reason: (error as Error).message });
+      }
+    }
+
+    if (started.length === 0 && candidates.length === 0) {
+      return reply.send({ started, skipped, detail: 'Nothing in Backlog or Ready.' });
+    }
+    return { started, skipped };
   });
 
   app.post('/api/tasks', async (request, reply) => {
@@ -220,6 +268,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
     return {
       task,
+      blockers: streamBlockers(Number(id)),
       runs: db.prepare('SELECT * FROM runs WHERE task_id = ? ORDER BY id DESC').all(Number(id)),
       messages: db
         .prepare('SELECT * FROM messages WHERE task_id = ? ORDER BY id')
@@ -254,13 +303,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   /** Start (or restart) an agent on this task. */
   app.post('/api/tasks/:id/run', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = (request.body ?? {}) as { model?: string; effort?: string; provider?: string };
+    const body = (request.body ?? {}) as {
+      model?: string;
+      effort?: string;
+      provider?: string;
+      force?: boolean;
+    };
     try {
       return enqueueRun({
         taskId: Number(id),
         model: normalizeModel(body.model),
         effort: normalizeEffort(body.effort),
         provider: body.provider,
+        force: body.force === true,
       });
     } catch (error) {
       return reply.code(400).send({ error: (error as Error).message });

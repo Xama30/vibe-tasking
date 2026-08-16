@@ -66,6 +66,37 @@ Edit `server/src/scaffold.ts` to change what lands in a new repo. It's the only
 place scaffolding lives, so per-language templates are a matter of returning a
 different array.
 
+## Streams — what can run in parallel
+
+Every task carries a **stream** number:
+
+- **Same stream** → runs in order. A task is blocked until every earlier task in
+  its stream is `done`.
+- **Different streams** → safe to run at the same time.
+
+```
+stream 1:  #16 delete command → #17 --json on list → #18 --json on delete
+stream 2:  #19 CONTRIBUTING.md                    (parallel — different file)
+```
+
+This exists because each task is implemented in its own worktree branched from
+the default branch. Two tasks editing the same file produce conflicting PRs, and
+a task can't see work that hasn't merged yet. Streams are how you say "these
+collide, do them in order".
+
+Blocked tasks are dimmed on the board and their **Implement** button is
+disabled, with the blockers listed. **Run anyway** overrides it when you know
+better. **Run N unblocked** in the header starts the head of every stream at
+once — the payoff for splitting well — still capped by `VIBE_MAX_CONCURRENT`.
+
+The planner assigns streams; `server/src/prompts/planning.md` is the guidance it
+follows, including how to decide the split. Edit that file to change how work
+gets divided.
+
+> Tasks created before streams existed all sit at stream 1, order 0, so they
+> don't block each other. Reorder them from the chat ("put #6 after #5") if you
+> want the dependency enforced.
+
 ## The planning chat
 
 "Plan" opens a conversation that files tasks for you. It reads the repo to
@@ -91,6 +122,16 @@ servers out of this session.
 
 The conversation resumes across turns and survives restarts (the session id is
 stored on the project), so you can come back tomorrow and say "split #5".
+
+Pick the planner's model from the dropdown in its header. It defaults to Sonnet
+rather than the project's implementation model: planning happens far more often
+than implementation, and a human reviews the board before anything runs.
+
+The decomposition guidance lives in `server/src/prompts/planning.md`. It is
+appended to the system prompt every turn rather than registered as a Claude Code
+skill — skills load on demand when their description matches, and splitting work
+is this agent's entire job, so it must never be the turn where the guidance
+didn't trigger. Edit the file like you would a skill; it applies immediately.
 
 ## Choosing a model
 

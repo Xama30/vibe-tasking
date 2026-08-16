@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { bus } from './bus.ts';
 import { MAX_CONCURRENT_RUNS } from './config.ts';
-import { db, now } from './db.ts';
+import { db, now, streamBlockers } from './db.ts';
 import {
   commitIfDirty,
   createPullRequest,
@@ -34,6 +34,8 @@ interface TaskRow {
   title: string;
   body: string;
   status: string;
+  stream: number;
+  stream_order: number;
 }
 
 interface RunRow {
@@ -138,11 +140,25 @@ export function enqueueRun(opts: {
   model?: string | null;
   effort?: string | null;
   provider?: string;
+  /** Start even if earlier work in the same stream is unfinished. */
+  force?: boolean;
 }): { runId: number } {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(opts.taskId) as
     | TaskRow
     | undefined;
   if (!task) throw new Error(`Task ${opts.taskId} not found`);
+
+  // Streams exist to stop agents branching from a main that doesn't yet contain
+  // the work they depend on. Overridable, because sometimes you know better.
+  if (!opts.force) {
+    const blockers = streamBlockers(task.id);
+    if (blockers.length > 0) {
+      const names = blockers.map((b) => `#${b.id} ${b.title} (${b.status})`).join(', ');
+      throw new Error(
+        `Blocked by earlier work in stream ${task.stream}: ${names}. Finish it first, or force to run anyway.`,
+      );
+    }
+  }
 
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as
     | ProjectRow
