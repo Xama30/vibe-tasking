@@ -49,6 +49,32 @@ Edit `server/src/scaffold.ts` to change what lands in a new repo. It's the only
 place scaffolding lives, so per-language templates are a matter of returning a
 different array.
 
+## The planning chat
+
+"Plan" opens a conversation that files tasks for you. It reads the repo to
+ground its descriptions, then calls board tools to create them:
+
+```
+you ──▶ claude -p --mcp-config {board} --permission-mode dontAsk
+             │  tools: Read, Glob, Grep + create_tasks/list_tasks/update_task
+             ▼
+        tasks appear in Backlog
+```
+
+The board tools are a small stdio **MCP server** (`server/src/mcp/board.ts`)
+spawned per turn. It talks to SQLite directly rather than back through the HTTP
+API — no auth story, no port assumptions — and takes its project id from the
+env block in `--mcp-config`, so a chat can only touch its own board.
+
+**The planner is read-only over your code.** `Read`, `Glob`, and `Grep` are
+allowed; `Write`, `Edit`, and `Bash` are not, and `--permission-mode dontAsk`
+denies anything not explicitly listed. Implementation happens in a task run,
+under review, not in the chat. `--strict-mcp-config` also keeps your global MCP
+servers out of this session.
+
+The conversation resumes across turns and survives restarts (the session id is
+stored on the project), so you can come back tomorrow and say "split #5".
+
 ## Choosing a model
 
 Each run picks a model and an effort level, falling back to the project default
@@ -119,6 +145,8 @@ server/src/
   config.ts            paths + limits
   db.ts                schema, orphaned-run reconciliation
   git.ts               worktrees, commits, push, gh repo/pr create
+  chat.ts              the planning chat
+  mcp/board.ts         MCP server exposing the board to the chat
   scaffold.ts          what goes into a brand-new project repo
   bus.ts               in-process pub/sub feeding SSE
   runner.ts            queue + the task→worktree→agent→PR pipeline
@@ -135,7 +163,7 @@ web/src/
 ## Not built yet
 
 - Drag-and-drop between columns (status changes go through the API today)
-- The chat that creates tasks in bulk (custom tools over the same runner)
+- Streaming for the planning chat (a turn takes ~30s and only shows a spinner)
 - In-app diff review (currently links out to the PR)
 - Parent/sub-tasks (`tasks.parent_id` exists and is unused)
 - Docker-per-run isolation

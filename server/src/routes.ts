@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { bus } from './bus.ts';
+import { chatHistory, resetChat, sendChatMessage } from './chat.ts';
 import { MAX_CONCURRENT_RUNS, WORKSPACE_DIR } from './config.ts';
 import { db, now } from './db.ts';
 import { createGitHubRepo, currentBranch, hasRemote, isGitRepo, sh, slugify } from './git.ts';
@@ -114,6 +115,34 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       project: db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid),
       notes,
     };
+  });
+
+  /** Planning chat: talk through work, agent files the tasks. */
+  app.get('/api/projects/:id/chat', async (request) => {
+    const { id } = request.params as { id: string };
+    return { messages: chatHistory(Number(id)) };
+  });
+
+  app.post('/api/projects/:id/chat', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { content?: string; model?: string };
+    if (!body.content?.trim()) return reply.code(400).send({ error: 'content is required' });
+
+    try {
+      return await sendChatMessage({
+        projectId: Number(id),
+        content: body.content.trim(),
+        model: normalizeModel(body.model),
+      });
+    } catch (error) {
+      return reply.code(500).send({ error: (error as Error).message });
+    }
+  });
+
+  app.delete('/api/projects/:id/chat', async (request) => {
+    const { id } = request.params as { id: string };
+    resetChat(Number(id));
+    return { reset: true };
   });
 
   app.get('/api/projects/:id/board', async (request, reply) => {

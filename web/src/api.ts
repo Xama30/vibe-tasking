@@ -29,6 +29,14 @@ export interface Choice {
   hint: string;
 }
 
+export interface ChatMessage {
+  id: number;
+  project_id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
 export interface Run {
   id: number;
   task_id: number;
@@ -116,6 +124,18 @@ export const api = {
     }),
 
   choices: () => request<{ models: Choice[]; efforts: Choice[] }>('/api/models'),
+
+  chatHistory: (projectId: number) =>
+    request<{ messages: ChatMessage[] }>(`/api/projects/${projectId}/chat`),
+
+  sendChat: (projectId: number, content: string, model?: string) =>
+    request<{ reply: string; costUsd: number | null; createdTasks: boolean }>(
+      `/api/projects/${projectId}/chat`,
+      { method: 'POST', body: JSON.stringify({ content, model }) },
+    ),
+
+  resetChat: (projectId: number) =>
+    request<{ reset: boolean }>(`/api/projects/${projectId}/chat`, { method: 'DELETE' }),
 
   setProjectDefaults: (projectId: number, defaultModel: string, defaultEffort: string) =>
     request<{ project: Project }>(`/api/projects/${projectId}`, {

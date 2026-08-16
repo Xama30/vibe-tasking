@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, subscribe, type Health, type Project, type Task, type TaskStatus } from './api';
+import { ChatPanel } from './ChatPanel';
 import { TaskPanel } from './TaskPanel';
 
 const COLUMNS: { id: TaskStatus; label: string }[] = [
@@ -224,6 +225,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [openTaskId, setOpenTaskId] = useState<number | null>(null);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const currentProject = projects.find((project) => project.id === projectId);
 
@@ -273,6 +275,19 @@ export default function App() {
           + Project
         </button>
 
+        <button
+          type="button"
+          disabled={projectId == null}
+          onClick={() => setChatOpen((open) => !open)}
+          className={`rounded border px-2 py-1 text-sm disabled:opacity-40 ${
+            chatOpen
+              ? 'border-accent bg-accent/10 text-ink'
+              : 'border-edge text-muted hover:text-ink'
+          }`}
+        >
+          Plan
+        </button>
+
         {currentProject?.github_repo && (
           <a
             href={`https://github.com/${currentProject.github_repo}`}
@@ -295,6 +310,15 @@ export default function App() {
       </header>
 
       <div className="flex min-h-0 flex-1">
+        {chatOpen && projectId != null && (
+          <ChatPanel
+            key={projectId}
+            projectId={projectId}
+            onClose={() => setChatOpen(false)}
+            onBoardChanged={() => void refreshBoard()}
+          />
+        )}
+
         <main className="flex min-w-0 flex-1 gap-3 overflow-x-auto p-3">
           {projectId == null ? (
             <div className="m-auto text-sm text-muted">Create a project to get started.</div>

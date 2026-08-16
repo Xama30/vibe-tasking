@@ -88,6 +88,18 @@ function addColumn(table: string, column: string, definition: string): void {
 addColumn('runs', 'effort', 'TEXT');
 addColumn('projects', 'default_model', 'TEXT');
 addColumn('projects', 'default_effort', 'TEXT');
+addColumn('projects', 'chat_session_id', 'TEXT');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL CHECK (role IN ('user','assistant')),
+  content    TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_project ON chat_messages(project_id, id);
+`);
 
 /**
  * A run marked `running` in the DB while no process exists is a crashed run —
